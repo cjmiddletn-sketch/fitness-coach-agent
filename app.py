@@ -174,7 +174,7 @@ tab_chat, tab_workout, tab_physique, tab_food, tab_roadmap, tab_analytics = st.t
 ])
 
 # -----------------------------------------------------------------------------
-# TAB 1: Lead Coach Chat (Iterative Goal & Coaching Engine)
+# TAB 1: Lead Coach Chat
 # -----------------------------------------------------------------------------
 with tab_chat:
     st.subheader("💬 Lead Fitness & Sports Nutrition Coach")
@@ -252,7 +252,6 @@ with tab_workout:
         include_abs=include_abs_toggle
     )
 
-    # Render Session Briefing Box
     st.markdown(f"""
     <div class="briefing-box">
         <h4 style="margin: 0; color: #38bdf8;">📋 SESSION BRIEFING • {session['duration_min']} MIN • {session['environment'].upper()}</h4>
@@ -263,7 +262,6 @@ with tab_workout:
     </div>
     """, unsafe_allow_html=True)
 
-    # Exercise Logging Cards
     st.markdown("### 📝 Prescribed Exercise Sequence")
     for idx, ex in enumerate(session["exercises"]):
         with st.expander(f"**#{idx+1}: {ex['name']}** — {ex['sets']} sets × {ex['reps']} (Target: {ex['target']})", expanded=(idx==0)):
@@ -277,7 +275,7 @@ with tab_workout:
             w_val = c_log1.number_input(f"Weight (kg) - #{idx+1}", value=24.0, step=0.5, key=f"w_{idx}")
             r_val = c_log2.number_input(f"Reps - #{idx+1}", value=10, step=1, key=f"r_{idx}")
             rpe_val = c_log3.slider(f"RPE - #{idx+1}", 5.0, 10.0, 8.0, 0.5, key=f"rpe_{idx}")
-            rir_val = c_log4.slider(f"RIR (Reps in Reserve) - #{idx+1}", 0, 5, 2, key=f"rir_{idx}")
+            rir_val = c_log4.slider(f"RIR - #{idx+1}", 0, 5, 2, key=f"rir_{idx}")
 
             c_act1, c_act2 = st.columns(2)
             if c_act1.button(f"✅ Log Working Set", key=f"btn_log_{idx}", use_container_width=True):
@@ -287,7 +285,6 @@ with tab_workout:
                 st.success(f"Logged {ex['name']}: {r_val} reps @ {w_val} kg!")
                 st.rerun()
 
-            # Barbell Plate Calculator for heavy sets
             if "Barbell" in ex["name"] or "Press" in ex["name"]:
                 with st.popover(f"⚖️ Plate Calc for {w_val} kg"):
                     pb = calculate_plate_breakdown(float(w_val))
@@ -325,7 +322,7 @@ with tab_physique:
         if p_submit and p_file:
             photo_bytes = p_file.read()
             with st.spinner("AI evaluating muscle definition & V-taper..."):
-                feedback = analyze_physique_photos([p_file], API_KEY, f"{profile['primary_goal']} with emphasis on abs and V-taper")
+                feedback = analyze_physique_photos([photo_bytes], API_KEY, f"{profile['primary_goal']} with emphasis on abs and V-taper")
                 state_mgr.log_physique_photo(USER_ID, p_pose, photo_bytes, feedback)
                 st.success("Physique photo and AI evaluation saved!")
                 st.rerun()
@@ -338,12 +335,12 @@ with tab_physique:
             with st.container():
                 col_img, col_fb = st.columns([1, 2])
                 img_data = base64.b64decode(p["photo_base64"])
-                col_img.image(img_data, caption=f"{p['log_date']} • {p['pose']}", use_column_width=True)
+                col_img.image(img_data, caption=f"{p['log_date']} • {p['pose']}", use_container_width=True)
                 col_fb.markdown(f"**AI Physique Feedback ({p['log_date']}):**")
                 col_fb.info(p["ai_feedback"])
                 st.markdown("---")
     else:
-        st.info("No physique photos uploaded yet. Upload your Week 1 baseline photo above!")
+        st.info("No physique photos uploaded yet. Upload your baseline photo above!")
 
 # -----------------------------------------------------------------------------
 # TAB 4: Food & Scanner
