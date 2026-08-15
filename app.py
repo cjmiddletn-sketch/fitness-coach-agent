@@ -3,11 +3,12 @@ import pandas as pd
 import json
 import base64
 import time
-import zxingcpp
+import io
 from PIL import Image
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
+import zxingcpp
 
 from state_manager import FitnessStateManager
 from agent_tools import (
@@ -30,9 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# -----------------------------------------------------------------------------
 # Custom Obsidian & Slate Styling
-# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
     .stApp {
@@ -69,7 +68,7 @@ USER_ID = "usr_primary"
 
 @st.cache_resource
 def get_manager():
-    return FitnessStateManager("fitness_agent.db")
+    return FitnessStateManager("fitness_coach_v2.db")
 
 state_mgr = get_manager()
 
@@ -101,7 +100,6 @@ except ValueError:
 profile = context["profile"]
 metrics = context["metrics_summary"]
 
-# Calculate Dynamic True TDEE
 true_tdee_data = calculate_true_tdee(
     metrics["recent_checkins"], 
     metrics["recent_nutrition"], 
@@ -109,7 +107,7 @@ true_tdee_data = calculate_true_tdee(
 )
 
 # -----------------------------------------------------------------------------
-# Sidebar: Recovery & Quick Morning Sync
+# Sidebar: Recovery & Morning Sync
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"### ⚡ **{profile['name']}**")
@@ -142,9 +140,7 @@ with st.sidebar:
     st.markdown(f"🔥 **True Biological TDEE:** `{true_tdee_data['true_tdee']} kcal`")
     st.caption(f"Status: {true_tdee_data['confidence']}")
 
-# -----------------------------------------------------------------------------
 # Top Recovery Banner
-# -----------------------------------------------------------------------------
 if metrics["today_recovery"]:
     rec = metrics["today_recovery"]
     status_map = {
@@ -182,7 +178,7 @@ with tab_chat:
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = [
-            {"role": "assistant", "content": f"Hey {profile['name']}! I have your full profile loaded (Hypertrophy + Direct Ab/V-Taper focus). How can I guide your training or nutrition today?"}
+            {"role": "assistant", "content": f"Hey {profile['name']}! Your coaching profile is loaded (Hypertrophy + Direct Core/V-Taper focus). What would you like to plan or log?"}
         ]
 
     chat_box = st.container(height=420)
@@ -205,7 +201,7 @@ with tab_chat:
             model = genai.GenerativeModel("gemini-1.5-flash")
             
             system_prompt = f"""
-            You are the elite lead coach and sports nutritionist for {profile['name']}.
+            You are the elite lead strength coach and sports nutritionist for {profile['name']}.
             User Stats & Goals:
             - Goal: {profile['primary_goal']} with priority on {profile['aesthetic_focus']} (deep core definition & V-taper).
             - Weight: {profile['weight_kg']} kg | Height: {profile['height_cm']} cm | Age: {profile['age']}
@@ -214,7 +210,7 @@ with tab_chat:
             - Today's Consumed: {metrics['today_nutrition']['calories']} kcal ({metrics['today_nutrition']['protein_g']}g P)
             - Today's Recovery: {metrics['today_recovery']['readiness_status'] if metrics['today_recovery'] else 'Standard'}
 
-            Coaching Directive:
+            Coaching Directives:
             1. Be concise, highly actionable, evidence-based, and encouraging.
             2. Support iterative goal adjustments (e.g. accelerating fat loss, adding core density, swapping exercises).
             3. Always ensure abs and V-taper movements are programmed with heavy progressive tension.
@@ -229,7 +225,7 @@ with tab_chat:
                 st.markdown(reply)
 
 # -----------------------------------------------------------------------------
-# TAB 2: Live In-Gym HUD & Dynamic Session Programmer
+# TAB 2: Live In-Gym HUD
 # -----------------------------------------------------------------------------
 with tab_workout:
     st.subheader("🏋️ Live In-Gym HUD & Adaptive Session Programmer")
@@ -275,7 +271,7 @@ with tab_workout:
             w_val = c_log1.number_input(f"Weight (kg) - #{idx+1}", value=24.0, step=0.5, key=f"w_{idx}")
             r_val = c_log2.number_input(f"Reps - #{idx+1}", value=10, step=1, key=f"r_{idx}")
             rpe_val = c_log3.slider(f"RPE - #{idx+1}", 5.0, 10.0, 8.0, 0.5, key=f"rpe_{idx}")
-            rir_val = c_log4.slider(f"RIR - #{idx+1}", 0, 5, 2, key=f"rir_{idx}")
+            rir_val = c_log4.slider(f"RIR (Reps in Reserve) - #{idx+1}", 0, 5, 2, key=f"rir_{idx}")
 
             c_act1, c_act2 = st.columns(2)
             if c_act1.button(f"✅ Log Working Set", key=f"btn_log_{idx}", use_container_width=True):
@@ -308,7 +304,7 @@ with tab_workout:
         st.toast("Rest Timer Started: 180s")
 
 # -----------------------------------------------------------------------------
-# TAB 3: Physique & Visual Progress Tracker
+# TAB 3: Physique & Visuals
 # -----------------------------------------------------------------------------
 with tab_physique:
     st.subheader("📸 Weekly Visual Progress & AI Physique Analysis")
@@ -320,6 +316,7 @@ with tab_physique:
         p_submit = st.form_submit_button("Inspect & Save Photo", use_container_width=True)
 
         if p_submit and p_file:
+            p_file.seek(0)
             photo_bytes = p_file.read()
             with st.spinner("AI evaluating muscle definition & V-taper..."):
                 feedback = analyze_physique_photos([photo_bytes], API_KEY, f"{profile['primary_goal']} with emphasis on abs and V-taper")
@@ -375,10 +372,13 @@ with tab_food:
         bc_cam = st.camera_input("Scan Barcode")
         scanned_code = bc_input
         if bc_cam:
-            img = Image.open(bc_cam)
-            codes = zxingcpp.read_barcodes(img)
-            if codes:
-                scanned_code = codes[0].text
+            try:
+                img = Image.open(bc_cam)
+                codes = zxingcpp.read_barcodes(img)
+                if codes:
+                    scanned_code = codes[0].text
+            except Exception:
+                pass
         
         if scanned_code:
             st.success(f"Barcode: {scanned_code}")
@@ -422,7 +422,7 @@ with tab_food:
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# TAB 5: Goals & 6-Month Macrocycle Plan
+# TAB 5: Goals & 6-Month Plan
 # -----------------------------------------------------------------------------
 with tab_roadmap:
     st.subheader("🎯 6-Month Macrocycle Periodization Plan")
@@ -450,7 +450,7 @@ with tab_roadmap:
         st.info("Log heavy working sets in the Live Workout HUD to populate your PR trophy case.")
 
 # -----------------------------------------------------------------------------
-# TAB 6: Analytics, Habits & Database Settings
+# TAB 6: Analytics & Settings
 # -----------------------------------------------------------------------------
 with tab_analytics:
     st.subheader("📊 Daily Longevity Habits & Micro-Checklist")
