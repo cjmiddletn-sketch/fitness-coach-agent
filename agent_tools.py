@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import math
 import requests
@@ -323,7 +324,14 @@ def analyze_meal_photo(image_file, api_key: str) -> Dict[str, Any]:
       "breakdown": ["item 1 with grams", "item 2 with grams"]
     }
     """
-    image = Image.open(image_file)
+    if isinstance(image_file, bytes):
+        image = Image.open(io.BytesIO(image_file))
+    elif hasattr(image_file, "seek"):
+        image_file.seek(0)
+        image = Image.open(image_file)
+    else:
+        image = Image.open(image_file)
+
     response = model.generate_content([prompt, image])
     cleaned = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned)
@@ -363,11 +371,11 @@ def parse_natural_food_or_voice(text_input: str, api_key: str) -> Dict[str, Any]
     cleaned = response.text.strip().replace("```json", "").replace("```", "")
     return json.loads(cleaned)
 
-def analyze_physique_photos(image_files: List[Any], api_key: str, user_goal: str) -> str:
+def analyze_physique_photos(image_bytes_list: List[bytes], api_key: str, user_goal: str) -> str:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-1.5-flash")
     
-    images = [Image.open(f) for f in image_files]
+    images = [Image.open(io.BytesIO(b)) for b in image_bytes_list]
     prompt = f"""
     You are an elite bodybuilding and physique assessment coach. Analyze the attached progress photo(s) for a client whose goal is: {user_goal} with an emphasis on core definition and V-taper.
     
