@@ -5,7 +5,6 @@ import requests
 from typing import Dict, List, Any, Optional
 from PIL import Image
 import google.generativeai as genai
-from openfoodfacts import API, APIVersion, Country, Environment, Flavor
 
 # -----------------------------------------------------------------------------
 # 1. MacroFactor-Style True TDEE & Dynamic Expenditure Engine
@@ -79,11 +78,9 @@ def calculate_tdee_and_macros(
     else:
         target_calories = tdee
 
-    # Minimum caloric floor
     min_floor = 1600 if gender.lower() == "male" else 1300
     target_calories = max(min_floor, target_calories)
 
-    # Higher protein multiplier for core definition & lean preservation
     protein_mult = 2.2 if "abs" in aesthetic_focus else 2.0
     protein_g = round(protein_mult * weight_kg)
     fat_calories = target_calories * 0.25
@@ -105,8 +102,8 @@ def calculate_tdee_and_macros(
 # -----------------------------------------------------------------------------
 def generate_workout_session(
     time_minutes: int,
-    environment: str, # "gym" or "travel"
-    split_type: str,  # "Push", "Pull", "Legs", "Upper", "Full Body"
+    environment: str,
+    split_type: str,
     joint_limitations: List[str],
     recovery_status: str,
     include_abs: bool = True
@@ -114,7 +111,6 @@ def generate_workout_session(
     
     is_gym = (environment.lower() == "gym")
     
-    # Define session briefings based on split
     briefing_templates = {
         "Push": {
             "theme": "Push: Clavicular Pecs & Lateral Delts (V-Taper)",
@@ -127,11 +123,11 @@ def generate_workout_session(
                 {"name": "Cable Overhead Triceps Extension", "sets": 3, "reps": "12-15", "rpe": 9.0, "rest_s": 60, "target": "Triceps Long Head"}
             ],
             "travel_exercises": [
-                {"name": "Deficit Push-ups (Hands on Books/Blocks)", "sets": 3, "reps": "12-15", "rpe": 8.0, "rest_s": 60, "target": "Chest"},
+                {"name": "Deficit Push-ups (Hands elevated)", "sets": 3, "reps": "12-15", "rpe": 8.0, "rest_s": 60, "target": "Chest"},
                 {"name": "Dumbbell/Band Lateral Raise", "sets": 3, "reps": "15-20", "rpe": 8.5, "rest_s": 45, "target": "Lateral Delts"},
                 {"name": "Diamond Push-ups or Chair Dips", "sets": 3, "reps": "10-12", "rpe": 8.5, "rest_s": 60, "target": "Triceps"}
             ],
-            "ab_finisher": {"name": "Kneeling High-Cable Rope Crunch", "travel_name": "Hollow Body Rocks / Weighted Plank", "sets": 3, "reps": "12-15", "rpe": 9.0, "rest_s": 45, "target": "Rectus Abdominis"}
+            "ab_finisher": {"name": "Kneeling High-Cable Rope Crunch", "travel_name": "Weighted Plank / Hollow Holds", "sets": 3, "reps": "12-15", "rpe": 9.0, "rest_s": 45, "target": "Rectus Abdominis"}
         },
         "Pull": {
             "theme": "Pull: Lat Width & Scapular Retraction",
@@ -148,7 +144,7 @@ def generate_workout_session(
                 {"name": "Band Pull-Aparts / Rear Delt Flyes", "sets": 3, "reps": "15-20", "rpe": 9.0, "rest_s": 45, "target": "Rear Delts"},
                 {"name": "Standing Dumbbell Hammer Curls", "sets": 3, "reps": "12-15", "rpe": 8.5, "rest_s": 45, "target": "Brachialis"}
             ],
-            "ab_finisher": {"name": "Hanging Leg / Knee Raises", "travel_name": "Lying Reverse Crunches", "sets": 3, "reps": "12-15", "rpe": 9.0, "rest_s": 45, "target": "Lower Abs & Hip Flexors"}
+            "ab_finisher": {"name": "Hanging Leg / Knee Raises", "travel_name": "Lying Reverse Crunches", "sets": 3, "reps": "12-15", "rpe": 9.0, "rest_s": 45, "target": "Lower Abs"}
         },
         "Legs": {
             "theme": "Legs: Quad Sweep, Glute & Core Stability",
@@ -165,7 +161,7 @@ def generate_workout_session(
                 {"name": "Single-Leg Bulgarian Split Squats", "sets": 3, "reps": "10-12", "rpe": 8.5, "rest_s": 60, "target": "Glutes & Quads"},
                 {"name": "Single-Leg Dumbbell RDL", "sets": 3, "reps": "10-12", "rpe": 8.0, "rest_s": 60, "target": "Hamstrings"}
             ],
-            "ab_finisher": {"name": "Ab Wheel Rollouts / Cable Pallof Press", "travel_name": "Long-Lever Plank Hold", "sets": 3, "reps": "10-12", "rpe": 9.0, "rest_s": 45, "target": "Transverse Abdominis"}
+            "ab_finisher": {"name": "Ab Wheel Rollouts / Cable Pallof Press", "travel_name": "Long-Lever Plank Hold", "sets": 3, "reps": "10-12", "rpe": 9.0, "rest_s": 45, "target": "Deep Core"}
         },
         "Upper": {
             "theme": "Upper Body Density & V-Taper Power",
@@ -207,14 +203,12 @@ def generate_workout_session(
     tmpl = briefing_templates[split]
     exercise_pool = tmpl["gym_exercises"] if is_gym else tmpl["travel_exercises"]
 
-    # Filter out exercises if joint limitation is present
     filtered_exercises = []
     for ex in exercise_pool:
         if "shoulder" in joint_limitations and ("Barbell Overhead Press" in ex["name"] or "Barbell Bench" in ex["name"]):
             ex = {"name": "Neutral-Grip Dumbbell Press", "sets": ex["sets"], "reps": ex["reps"], "rpe": ex["rpe"], "rest_s": ex["rest_s"], "target": ex["target"]}
         filtered_exercises.append(ex)
 
-    # Trim or expand exercises based on time
     if time_minutes <= 30:
         selected_exercises = filtered_exercises[:2]
     elif time_minutes <= 45:
@@ -222,7 +216,6 @@ def generate_workout_session(
     else:
         selected_exercises = filtered_exercises[:4]
 
-    # Ab finisher inclusion
     ab_item = tmpl["ab_finisher"]
     ab_name = ab_item["name"] if is_gym else ab_item["travel_name"]
     if include_abs:
@@ -235,7 +228,6 @@ def generate_workout_session(
             "target": ab_item["target"]
         })
 
-    # Apply recovery volume modifiers if needed
     if recovery_status == "DELOAD":
         for e in selected_exercises:
             e["sets"] = max(2, e["sets"] - 1)
@@ -276,33 +268,38 @@ def calculate_plate_breakdown(target_weight_kg: float, bar_weight_kg: float = 20
     }
 
 # -----------------------------------------------------------------------------
-# 4. Barcode & Multimodal Vision Analysis
+# 4. Direct REST Barcode Lookup & Multimodal Vision Analysis
 # -----------------------------------------------------------------------------
 def lookup_barcode_packaged_food(barcode: str) -> Dict[str, Any]:
-    api = API(
-        user_agent="FitnessAgent/1.0",
-        country=Country.world,
-        flavor=Flavor.off,
-        version=APIVersion.v2,
-        environment=Environment.org
-    )
     try:
-        product_data = api.product.get(barcode)
-        if not product_data or product_data.get("status") != 1:
-            return {"status": "error", "message": f"Barcode {barcode} not found."}
+        url = f"https://world.openfoodfacts.org/api/v2/product/{barcode.strip()}.json"
+        headers = {"User-Agent": "FitnessCoachAgent/1.0 (fitness-agent-app)"}
+        resp = requests.get(url, headers=headers, timeout=5)
+        
+        if resp.status_code != 200:
+            return {"status": "error", "message": f"Barcode {barcode} lookup failed (HTTP {resp.status_code})."}
 
-        product = product_data.get("product", {})
+        data = resp.json()
+        if data.get("status") != 1:
+            return {"status": "error", "message": f"Barcode {barcode} not found in database."}
+
+        product = data.get("product", {})
         nutriments = product.get("nutriments", {})
+
+        cal = nutriments.get("energy-kcal_serving") or nutriments.get("energy-kcal_100g") or nutriments.get("energy-kcal") or 0
+        prot = nutriments.get("proteins_serving") or nutriments.get("proteins_100g") or nutriments.get("proteins") or 0.0
+        carb = nutriments.get("carbohydrates_serving") or nutriments.get("carbohydrates_100g") or nutriments.get("carbohydrates") or 0.0
+        fat = nutriments.get("fat_serving") or nutriments.get("fat_100g") or nutriments.get("fat") or 0.0
 
         return {
             "status": "success",
-            "product_name": product.get("product_name", "Packaged Food"),
+            "product_name": product.get("product_name", "Packaged Product"),
             "brand": product.get("brands", "Brand"),
             "per_serving": {
-                "calories": round(nutriments.get("energy-kcal_serving", nutriments.get("energy-kcal_100g", 0))),
-                "protein_g": round(nutriments.get("proteins_serving", nutriments.get("proteins_100g", 0)), 1),
-                "carbs_g": round(nutriments.get("carbohydrates_serving", nutriments.get("carbohydrates_100g", 0)), 1),
-                "fat_g": round(nutriments.get("fat_serving", nutriments.get("fat_100g", 0)), 1),
+                "calories": round(float(cal)),
+                "protein_g": round(float(prot), 1),
+                "carbs_g": round(float(carb), 1),
+                "fat_g": round(float(fat), 1),
             }
         }
     except Exception as e:
