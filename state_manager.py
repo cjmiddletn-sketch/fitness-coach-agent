@@ -5,13 +5,13 @@ from datetime import datetime, date, timedelta
 from typing import Dict, Any, List, Optional
 
 class FitnessStateManager:
-    def __init__(self, db_path: str = "fitness_agent.db"):
+    def __init__(self, db_path: str = "fitness_coach_v2.db"):
         self.db_path = db_path
         self._init_db()
         self._migrate_db()
 
     def _get_connection(self):
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -66,14 +66,14 @@ class FitnessStateManager:
                 workout_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT NOT NULL,
                 log_date DATE NOT NULL,
-                session_theme TEXT,
+                session_theme TEXT DEFAULT 'General',
                 exercise_name TEXT NOT NULL,
                 sets INTEGER NOT NULL,
                 reps INTEGER NOT NULL,
                 weight_kg REAL NOT NULL,
-                rpe REAL,
-                rir REAL,
-                notes TEXT,
+                rpe REAL DEFAULT 8.0,
+                rir REAL DEFAULT 2.0,
+                notes TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users_profile(user_id) ON DELETE CASCADE
             );
@@ -86,9 +86,9 @@ class FitnessStateManager:
                 user_id TEXT NOT NULL,
                 log_date DATE NOT NULL,
                 weight_kg REAL NOT NULL,
-                fatigue_score INTEGER,
-                sleep_hours REAL,
-                notes TEXT,
+                fatigue_score INTEGER DEFAULT 3,
+                sleep_hours REAL DEFAULT 7.5,
+                notes TEXT DEFAULT '',
                 FOREIGN KEY (user_id) REFERENCES users_profile(user_id) ON DELETE CASCADE,
                 UNIQUE(user_id, log_date)
             );
@@ -171,37 +171,35 @@ class FitnessStateManager:
             conn.commit()
 
     def _migrate_db(self):
-        """Auto-migrates existing tables to add any missing columns non-destructively."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # Helper to get existing column names for a table
             def get_columns(table_name):
                 cursor.execute(f"PRAGMA table_info({table_name})")
                 return [row["name"] for row in cursor.fetchall()]
 
-            # 1. users_profile migration
+            # Migrate users_profile
             cols = get_columns("users_profile")
-            if "aesthetic_focus" not in cols:
+            if cols and "aesthetic_focus" not in cols:
                 cursor.execute("ALTER TABLE users_profile ADD COLUMN aesthetic_focus TEXT NOT NULL DEFAULT 'abs_v_taper'")
-            if "active_split" not in cols:
+            if cols and "active_split" not in cols:
                 cursor.execute("ALTER TABLE users_profile ADD COLUMN active_split TEXT NOT NULL DEFAULT 'Push / Pull / Legs'")
 
-            # 2. workout_plan_logs migration
+            # Migrate workout_plan_logs
             cols = get_columns("workout_plan_logs")
-            if "session_theme" not in cols:
+            if cols and "session_theme" not in cols:
                 cursor.execute("ALTER TABLE workout_plan_logs ADD COLUMN session_theme TEXT DEFAULT 'General'")
-            if "rir" not in cols:
+            if cols and "rir" not in cols:
                 cursor.execute("ALTER TABLE workout_plan_logs ADD COLUMN rir REAL DEFAULT 2.0")
 
-            # 3. nutrition_daily_logs migration
+            # Migrate nutrition_daily_logs
             cols = get_columns("nutrition_daily_logs")
-            if "meal_type" not in cols:
+            if cols and "meal_type" not in cols:
                 cursor.execute("ALTER TABLE nutrition_daily_logs ADD COLUMN meal_type TEXT DEFAULT 'General'")
 
-            # 4. weight_fatigue_logs migration
+            # Migrate weight_fatigue_logs
             cols = get_columns("weight_fatigue_logs")
-            if "notes" not in cols:
+            if cols and "notes" not in cols:
                 cursor.execute("ALTER TABLE weight_fatigue_logs ADD COLUMN notes TEXT DEFAULT ''")
 
             conn.commit()
@@ -402,9 +400,17 @@ class FitnessStateManager:
                 raise ValueError(f"User {user_id} not found.")
 
             profile = dict(profile_row)
-            profile["available_equipment"] = json.loads(profile["available_equipment"]) if profile["available_equipment"] else []
-            profile["dietary_restrictions"] = json.loads(profile["dietary_restrictions"]) if profile["dietary_restrictions"] else []
-            profile["joint_limitations"] = json.loads(profile["joint_limitations"]) if profile["joint_limitations"] else []
+            
+            # Safe JSON parsing
+            for json_field in ["available_equipment", "dietary_restrictions", "joint_limitations"]:
+                val = profile.get(json_field)
+                if isinstance(val, str):
+                    try:
+                        profile[json_field] = json.loads(val)
+                    except Exception:
+                        profile[json_field] = []
+                elif not isinstance(val, list):
+                    profile[json_field] = []
 
             # 14-day Check-ins
             cutoff_date = (date.today() - timedelta(days=days_history)).isoformat()
