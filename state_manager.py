@@ -8,6 +8,7 @@ class FitnessStateManager:
     def __init__(self, db_path: str = "fitness_agent.db"):
         self.db_path = db_path
         self._init_db()
+        self._migrate_db()
 
     def _get_connection(self):
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -93,7 +94,7 @@ class FitnessStateManager:
             );
             """)
 
-            # 5. Recovery Biometrics Table (Apple Watch)
+            # 5. Recovery Biometrics Table
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS recovery_biometrics (
                 log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +141,7 @@ class FitnessStateManager:
             );
             """)
 
-            # 8. Muscle Soreness & Pump Feedback Table (RP-style)
+            # 8. Muscle Soreness Feedback Table
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS muscle_soreness_pump (
                 feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +168,42 @@ class FitnessStateManager:
                 UNIQUE(user_id, exercise_name)
             );
             """)
+            conn.commit()
+
+    def _migrate_db(self):
+        """Auto-migrates existing tables to add any missing columns non-destructively."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Helper to get existing column names for a table
+            def get_columns(table_name):
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                return [row["name"] for row in cursor.fetchall()]
+
+            # 1. users_profile migration
+            cols = get_columns("users_profile")
+            if "aesthetic_focus" not in cols:
+                cursor.execute("ALTER TABLE users_profile ADD COLUMN aesthetic_focus TEXT NOT NULL DEFAULT 'abs_v_taper'")
+            if "active_split" not in cols:
+                cursor.execute("ALTER TABLE users_profile ADD COLUMN active_split TEXT NOT NULL DEFAULT 'Push / Pull / Legs'")
+
+            # 2. workout_plan_logs migration
+            cols = get_columns("workout_plan_logs")
+            if "session_theme" not in cols:
+                cursor.execute("ALTER TABLE workout_plan_logs ADD COLUMN session_theme TEXT DEFAULT 'General'")
+            if "rir" not in cols:
+                cursor.execute("ALTER TABLE workout_plan_logs ADD COLUMN rir REAL DEFAULT 2.0")
+
+            # 3. nutrition_daily_logs migration
+            cols = get_columns("nutrition_daily_logs")
+            if "meal_type" not in cols:
+                cursor.execute("ALTER TABLE nutrition_daily_logs ADD COLUMN meal_type TEXT DEFAULT 'General'")
+
+            # 4. weight_fatigue_logs migration
+            cols = get_columns("weight_fatigue_logs")
+            if "notes" not in cols:
+                cursor.execute("ALTER TABLE weight_fatigue_logs ADD COLUMN notes TEXT DEFAULT ''")
+
             conn.commit()
 
     def upsert_user_profile(self, profile: Dict[str, Any]) -> None:
@@ -239,7 +276,7 @@ class FitnessStateManager:
     def update_personal_record(self, user_id: str, exercise: str, weight_kg: float, reps: int) -> None:
         if reps <= 0 or weight_kg <= 0:
             return
-        est_1rm = round(weight_kg * (1 + reps / 30.0), 1)
+        est_1rm = round(weight_kg * (1.0 + reps / 30.0), 1)
         today = date.today().isoformat()
         
         with self._get_connection() as conn:
@@ -365,11 +402,11 @@ class FitnessStateManager:
                 raise ValueError(f"User {user_id} not found.")
 
             profile = dict(profile_row)
-            profile["available_equipment"] = json.loads(profile["available_equipment"])
-            profile["dietary_restrictions"] = json.loads(profile["dietary_restrictions"])
-            profile["joint_limitations"] = json.loads(profile["joint_limitations"])
+            profile["available_equipment"] = json.loads(profile["available_equipment"]) if profile["available_equipment"] else []
+            profile["dietary_restrictions"] = json.loads(profile["dietary_restrictions"]) if profile["dietary_restrictions"] else []
+            profile["joint_limitations"] = json.loads(profile["joint_limitations"]) if profile["joint_limitations"] else []
 
-            # 14-day Check-ins for rolling expenditure
+            # 14-day Check-ins
             cutoff_date = (date.today() - timedelta(days=days_history)).isoformat()
             cursor.execute(
                 "SELECT log_date, weight_kg, fatigue_score, sleep_hours FROM weight_fatigue_logs WHERE user_id = ? AND log_date >= ? ORDER BY log_date ASC",
@@ -391,7 +428,7 @@ class FitnessStateManager:
             )
             recent_workouts = [dict(row) for row in cursor.fetchall()]
 
-            # Today's Nutrition Consumed
+            # Today's Nutrition
             today = date.today().isoformat()
             cursor.execute(
                 "SELECT SUM(actual_calories) as cal, SUM(actual_protein_g) as p, SUM(actual_carbs_g) as c, SUM(actual_fat_g) as f FROM nutrition_daily_logs WHERE user_id = ? AND log_date = ?",
